@@ -8,6 +8,7 @@
 #include <chrono>
 #include <queue>
 #include <limits>
+#include <algorithm>
 
 struct Restaurant 
 {
@@ -27,39 +28,36 @@ void restaurantWorker()
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    while (true) {
+    while (true) 
+    {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [] { return !inputQueue.empty() || done; });
+        cv.wait(lock);
 
-        if (done && inputQueue.empty()) break;
+        if (done && inputQueue.empty()) 
+            break;
+        if (inputQueue.empty()) 
+            continue;
 
-        while (!inputQueue.empty())
+        while (!inputQueue.empty()) 
         {
             Restaurant r = inputQueue.front();
             inputQueue.pop();
 
-            lock.unlock(); 
-
             if (r.distance <= maxDistance) 
             {
+                filteredRestaurants.push_back(r);
+
+                if (!filteredRestaurants.empty()) 
                 {
-                    std::unique_lock<std::mutex> innerLock(mtx);
-                    filteredRestaurants.push_back(r);
+                    std::uniform_int_distribution<> dist(0, filteredRestaurants.size() - 1);
+                    std::cout << " \nSuggested place: " << filteredRestaurants[dist(gen)].name << "\n\n";
                 }
-                std::cout << "Added \"" << r.name 
-                          << "\" (" << r.distance << " miles) to nearby list.\n";
-
-                std::unique_lock<std::mutex> suggestionLock(mtx);
-                std::uniform_int_distribution<> dist(0, filteredRestaurants.size() - 1);
-                std::cout << "Suggested place: " 
-                          << filteredRestaurants[dist(gen)].name << "\n";
-            } else 
+                std::cout << "Added \"" << r.name << "\" (" << r.distance << " miles) to nearby list.\n\n";
+            } 
+            else 
             {
-                std::cout << r.name << " is too far" 
-                          << r.distance << " miles).\n";
+                std::cout << r.name << " is too far (" << r.distance << " miles).\n\n";
             }
-
-            lock.lock(); 
         }
     }
 }
@@ -67,17 +65,31 @@ void restaurantWorker()
 int main() 
 {
     std::cout << "Restaurant Finder \n\n";
+    std::cout << "Available commands:\n";
+    std::cout << "  - Type a restaurant name to add it.\n";
+    std::cout << "  - Type 'list' to see all nearby restaurants saved so far.\n";
+    std::cout << "  - Type 'exit' to quit the program.\n\n";
+
     std::cout << "Enter maximum search radius in miles: ";
     std::cin >> maxDistance;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
 
     std::thread worker(restaurantWorker);
 
     while (true) 
     {
         Restaurant r;
-        std::cout << "\nEnter restaurant name (or type 'exit' to quit): ";
+        std::cout << "\nEnter restaurant name (or 'list'/'exit'): ";
         std::getline(std::cin, r.name);
+
+        r.name.erase(0, r.name.find_first_not_of(" \t\n\r\f\v"));
+        r.name.erase(r.name.find_last_not_of(" \t\n\r\f\v") + 1);
+
+        if (r.name.empty()) 
+        {
+            std::cout << "Restaurant name cannot be blank. Please try again.\n";
+            continue;
+        }
 
         if (r.name == "exit") 
         {
@@ -85,24 +97,39 @@ int main()
             std::cout << "Are you sure you want to exit? (yes/no): ";
             std::getline(std::cin, confirm);
 
-            for (char &c : confirm) 
-            {
-                c = std::tolower(static_cast<unsigned char>(c));
-            }
+            std::transform(confirm.begin(), confirm.end(), confirm.begin(), [](unsigned char c){ return std::tolower(c); });
 
             if (confirm == "yes" || confirm == "y") 
-            {
                 break;
-            } else 
+            else 
             {
                 std::cout << "Returning to input...\n";
                 continue;
             }
         }
 
+        if (r.name == "list") 
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            if (filteredRestaurants.empty()) 
+            {
+                std::cout << "No nearby restaurants saved yet.\n";
+            } 
+            else 
+            {
+                std::cout << "Nearby Restaurants:\n";
+                for (size_t i = 0; i < filteredRestaurants.size(); i++) 
+                {
+                    std::cout << i + 1 << ". " << filteredRestaurants[i].name
+                              << " (" << filteredRestaurants[i].distance << " miles)\n";
+                }
+            }
+            continue;
+        }
+
         std::cout << "Enter distance in miles: ";
         std::cin >> r.distance;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
 
         {
             std::unique_lock<std::mutex> lock(mtx);
