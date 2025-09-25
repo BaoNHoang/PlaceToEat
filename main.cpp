@@ -31,8 +31,15 @@ void restaurantWorker()
     while (true) 
     {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [] { return done || !inputQueue.empty(); }); // wait until work or done
+        while (!done && inputQueue.empty()) 
+        {
+            cv.wait(lock);
+        }
 
+        if (done && inputQueue.empty()) 
+        {
+            break;
+        }
         if (done && inputQueue.empty()) 
             break;
 
@@ -58,7 +65,6 @@ void restaurantWorker()
         }
     }
 }
-
 int main() 
 {
     std::cout << "Restaurant Finder \n\n";
@@ -66,37 +72,29 @@ int main()
     std::cout << "  - Type a restaurant name to add it.\n";
     std::cout << "  - Type 'list' to see all nearby restaurants saved so far.\n";
     std::cout << "  - Type 'exit' to quit the program.\n\n";
-
     std::cout << "Enter maximum search radius in miles: ";
     std::cin >> maxDistance;
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
-
     std::thread worker(restaurantWorker);
-
     while (true) 
     {
         Restaurant r;
         std::cout << "\nEnter restaurant name (or 'list'/'exit'): ";
         std::getline(std::cin, r.name);
-
-        // trim whitespace
         r.name.erase(0, r.name.find_first_not_of(" \t\n\r\f\v"));
         r.name.erase(r.name.find_last_not_of(" \t\n\r\f\v") + 1);
-
         if (r.name.empty()) 
         {
             std::cout << "Restaurant name cannot be blank. Please try again.\n";
             continue;
         }
-
         if (r.name == "exit") 
         {
             std::string confirm;
             std::cout << "Are you sure you want to exit? (yes/no): ";
             std::getline(std::cin, confirm);
 
-            std::transform(confirm.begin(), confirm.end(), confirm.begin(),
-                           [](unsigned char c){ return std::tolower(c); });
+            std::transform(confirm.begin(), confirm.end(), confirm.begin(), [](unsigned char c){ return std::tolower(c); });
 
             if (confirm == "yes" || confirm == "y") 
                 break;
@@ -106,7 +104,6 @@ int main()
                 continue;
             }
         }
-
         if (r.name == "list") 
         {
             std::unique_lock<std::mutex> lock(mtx);
@@ -124,7 +121,6 @@ int main()
             }
             continue; 
         }
-
         std::cout << "Enter distance in miles: ";
         std::cin >> r.distance;
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
@@ -135,7 +131,6 @@ int main()
         }
         cv.notify_one(); 
     }
-
     {
         std::unique_lock<std::mutex> lock(mtx);
         done = true;
