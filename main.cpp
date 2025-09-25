@@ -31,12 +31,10 @@ void restaurantWorker()
     while (true) 
     {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock);
+        cv.wait(lock, [] { return done || !inputQueue.empty(); }); // wait until work or done
 
         if (done && inputQueue.empty()) 
             break;
-        if (inputQueue.empty()) 
-            continue;
 
         while (!inputQueue.empty()) 
         {
@@ -50,9 +48,8 @@ void restaurantWorker()
                 if (!filteredRestaurants.empty()) 
                 {
                     std::uniform_int_distribution<> dist(0, filteredRestaurants.size() - 1);
-                    std::cout << " \nSuggested place: " << filteredRestaurants[dist(gen)].name << "\n\n";
+                    std::cout << "\nSuggested place: " << filteredRestaurants[dist(gen)].name << "\n\n";
                 }
-                std::cout << "Added \"" << r.name << "\" (" << r.distance << " miles) to nearby list.\n\n";
             } 
             else 
             {
@@ -82,6 +79,7 @@ int main()
         std::cout << "\nEnter restaurant name (or 'list'/'exit'): ";
         std::getline(std::cin, r.name);
 
+        // trim whitespace
         r.name.erase(0, r.name.find_first_not_of(" \t\n\r\f\v"));
         r.name.erase(r.name.find_last_not_of(" \t\n\r\f\v") + 1);
 
@@ -97,7 +95,8 @@ int main()
             std::cout << "Are you sure you want to exit? (yes/no): ";
             std::getline(std::cin, confirm);
 
-            std::transform(confirm.begin(), confirm.end(), confirm.begin(), [](unsigned char c){ return std::tolower(c); });
+            std::transform(confirm.begin(), confirm.end(), confirm.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
 
             if (confirm == "yes" || confirm == "y") 
                 break;
@@ -120,11 +119,10 @@ int main()
                 std::cout << "Nearby Restaurants:\n";
                 for (size_t i = 0; i < filteredRestaurants.size(); i++) 
                 {
-                    std::cout << i + 1 << ". " << filteredRestaurants[i].name
-                              << " (" << filteredRestaurants[i].distance << " miles)\n";
+                    std::cout << i + 1 << ". " << filteredRestaurants[i].name  << " (" << filteredRestaurants[i].distance << " miles)\n";
                 }
             }
-            continue;
+            continue; 
         }
 
         std::cout << "Enter distance in miles: ";
@@ -135,7 +133,7 @@ int main()
             std::unique_lock<std::mutex> lock(mtx);
             inputQueue.push(r);
         }
-        cv.notify_one();
+        cv.notify_one(); 
     }
 
     {
@@ -145,11 +143,11 @@ int main()
     cv.notify_one();
     worker.join();
 
-    std::cout << "\nProgram Closed - Total nearby restaurants saved: " << filteredRestaurants.size() << "\n";
+    std::cout << "\nProgram Closed - Total nearby restaurants saved: " 
+              << filteredRestaurants.size() << "\n";
     for (size_t i = 0; i < filteredRestaurants.size(); i++) 
     {
-        std::cout << i + 1 << ". " << filteredRestaurants[i].name 
-                  << " (" << filteredRestaurants[i].distance << " miles)\n";
+        std::cout << i + 1 << ". " << filteredRestaurants[i].name << " (" << filteredRestaurants[i].distance << " miles)\n";
     }
     return 0;
 }
